@@ -1,17 +1,19 @@
 package com.coinselection
 
+import com.coinselection.dto.CoinSelectionResult
+import com.coinselection.dto.UnspentOutput
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicReference
 
 class BtcCoinSelectionProvider : CoinSelectionProvider {
 
-    override fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, inputSize: Int, outputSize: Int, headerSize: Int): List<UnspentOutput> {
+    override fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, inputSize: Int, outputSize: Int, headerSize: Int): CoinSelectionResult {
         val selectedUtxoListSumAndFee = select(utxoList, targetValue, feeRatePerByte, maxNumberOfInputs, numberOfDestinationAddress, inputSize, outputSize, headerSize)
         val selectedUtxoList = selectedUtxoListSumAndFee.first
         val cumulativeSum = selectedUtxoListSumAndFee.second
         val cumulativeFee = selectedUtxoListSumAndFee.third
         val improvedUtxoList = improve(utxoList.subtract(selectedUtxoList).toList(), cumulativeSum, cumulativeFee, targetValue, feeRatePerByte, maxNumberOfInputs, inputSize)
-        return selectedUtxoList.union(improvedUtxoList).toList()
+        return CoinSelectionResult(selectedUtxos = selectedUtxoList.union(improvedUtxoList).toList(), totalFee = cumulativeFee.get())
     }
 
     private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, inputSize: Int, outputSize: Int, headerSize: Int): Triple<List<UnspentOutput>, AtomicReference<BigDecimal>, AtomicReference<BigDecimal>> {
