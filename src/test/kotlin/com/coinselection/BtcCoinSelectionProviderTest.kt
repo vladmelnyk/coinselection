@@ -26,11 +26,11 @@ class BtcCoinSelectionProviderTest {
         val rangeMax = 1
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
         val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee)
-        val sum = coinSelectionResult.selectedUtxos.sumByBigDecimal { it.amount }
-        val count = coinSelectionResult.selectedUtxos.size
-        val feeSimple = calculateTransactionFee(count, 2, smartFee)
+        val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
+        val count = coinSelectionResult.selectedUtxos?.size
+        val feeSimple = calculateTransactionFee(count!!, 2, smartFee)
         val feeCalculated = coinSelectionResult.totalFee.movePointLeft(8)
-        Assertions.assertTrue(sum > targetValue + feeCalculated)
+        Assertions.assertTrue(sum!! > targetValue + feeCalculated)
         Assertions.assertTrue(feeSimple == feeCalculated.toLong())
     }
 
@@ -42,14 +42,14 @@ class BtcCoinSelectionProviderTest {
         val maxNumOfInputs = 3
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
         val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee, maxNumberOfInputs = maxNumOfInputs)
-        val sum = coinSelectionResult.selectedUtxos.sumByBigDecimal { it.amount }
-        val count = coinSelectionResult.selectedUtxos.size
-        val feeSimple = calculateTransactionFee(count, 2, smartFee)
+        val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
+        val count = coinSelectionResult.selectedUtxos?.size
+        val feeSimple = calculateTransactionFee(count!!, 2, smartFee)
         val feeCalculated = coinSelectionResult.totalFee.movePointLeft(8)
 
-        Assertions.assertTrue(sum > targetValue + feeCalculated)
+        Assertions.assertTrue(sum!! > targetValue + feeCalculated)
         Assertions.assertTrue(feeSimple == feeCalculated.toLong())
-        Assertions.assertTrue(coinSelectionResult.selectedUtxos.contains(utxoList.asSequence().sortedByDescending { it.amount }.first()))
+        Assertions.assertTrue(coinSelectionResult.selectedUtxos!!.contains(utxoList.asSequence().sortedByDescending { it.amount }.first()))
     }
 
     @Test
@@ -60,13 +60,23 @@ class BtcCoinSelectionProviderTest {
         val maxNumOfInputs = 3
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
         val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee, maxNumberOfInputs = maxNumOfInputs)
-        val sum = coinSelectionResult.selectedUtxos.sumByBigDecimal { it.amount }
-        val count = coinSelectionResult.selectedUtxos.size
-        val feeSimple = calculateTransactionFee(count, 2, smartFee)
+        val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
+        val count = coinSelectionResult.selectedUtxos?.size
+        val feeSimple = calculateTransactionFee(count!!, 2, smartFee)
         val feeCalculated = coinSelectionResult.totalFee.movePointLeft(8)
-        Assertions.assertTrue(sum > targetValue + feeCalculated)
+        Assertions.assertTrue(sum!! > targetValue + feeCalculated)
         Assertions.assertTrue(feeSimple == feeCalculated.toLong())
-        Assertions.assertSame(maxNumOfInputs * 2 - 1, coinSelectionResult.selectedUtxos.size)
+        Assertions.assertSame(maxNumOfInputs * 2 - 1, coinSelectionResult.selectedUtxos!!.size)
+    }
+
+    @Test
+    fun `should return null utxoList if total accumulated value is not enough`() {
+        val targetValue = BigDecimal(100)
+        val rangeMin = 1.1
+        val rangeMax = 1.2
+        val utxoList = (1..50).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee)
+        Assertions.assertNull(coinSelectionResult.selectedUtxos)
     }
 
     private fun createUnspentOutput(value: Double): UnspentOutput {

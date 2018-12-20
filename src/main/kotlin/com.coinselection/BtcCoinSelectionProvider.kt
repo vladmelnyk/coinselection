@@ -12,11 +12,16 @@ class BtcCoinSelectionProvider : CoinSelectionProvider {
         val selectedUtxoList = selectedUtxoListSumAndFee.first
         val cumulativeSum = selectedUtxoListSumAndFee.second
         val cumulativeFee = selectedUtxoListSumAndFee.third
-        val improvedUtxoList = improve(utxoList.subtract(selectedUtxoList).toList(), cumulativeSum, cumulativeFee, targetValue, feeRatePerByte, maxNumberOfInputs, inputSize)
-        return CoinSelectionResult(selectedUtxos = selectedUtxoList.union(improvedUtxoList).toList(), totalFee = cumulativeFee.get())
+        val improvedUtxoList = if (selectedUtxoList != null) {
+            improve(utxoList.subtract(selectedUtxoList).toList(), cumulativeSum, cumulativeFee, targetValue, feeRatePerByte, maxNumberOfInputs,
+                    inputSize)
+        } else {
+            listOf()
+        }
+        return CoinSelectionResult(selectedUtxos = selectedUtxoList?.union(improvedUtxoList)?.toList(), totalFee = cumulativeFee.get())
     }
 
-    private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, inputSize: Int, outputSize: Int, headerSize: Int): Triple<List<UnspentOutput>, AtomicReference<BigDecimal>, AtomicReference<BigDecimal>> {
+    private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, inputSize: Int, outputSize: Int, headerSize: Int): Triple<List<UnspentOutput>?, AtomicReference<BigDecimal>, AtomicReference<BigDecimal>> {
         val cumulativeSum = AtomicReference<BigDecimal>(BigDecimal.ZERO)
         val costPerInput = inputSize.toBigDecimal() * feeRatePerByte
         val costPerOutput = outputSize.toBigDecimal() * feeRatePerByte
@@ -42,6 +47,10 @@ class BtcCoinSelectionProvider : CoinSelectionProvider {
                     .onEach { append(atomicReference = cumulativeSum, with = it.amount) }
                     .onEach { append(atomicReference = cumulativeFee, with = costPerInput) }
                     .toList()
+//            Return null utxo list if total amount is still not enough
+            if (cumulativeSum.get() < targetValue + cumulativeFee.get()) {
+                return Triple(null, cumulativeSum, cumulativeFee)
+            }
         }
         return Triple(selectedUtxoList, cumulativeSum, cumulativeFee)
 
