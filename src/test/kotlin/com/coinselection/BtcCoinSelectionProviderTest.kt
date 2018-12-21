@@ -31,6 +31,7 @@ class BtcCoinSelectionProviderTest {
         val feeSimple = calculateTransactionFee(count!!, 2, smartFeePerByte)
         val feeCalculated = coinSelectionResult.totalFee
         Assertions.assertTrue(sum!! > targetValue + feeCalculated)
+        Assertions.assertTrue(sum < targetValue * 3.toBigDecimal() + feeCalculated)
         Assertions.assertTrue(feeSimple == feeCalculated)
     }
 

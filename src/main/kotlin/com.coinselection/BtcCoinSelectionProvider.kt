@@ -67,10 +67,10 @@ class BtcCoinSelectionProvider : CoinSelectionProvider {
                 .asSequence()
                 .take(maxNumOfInputs)
                 .takeWhile { currentCumulativeSum.get() < maxTargetValue + currentCumulativeFee.get() }
-                .takeWhile { (currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs() <= delta.get() }
+                .onEach { delta.getAndSet((currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs()) }
+                .takeWhile { (currentCumulativeSum.get() + it.amount - (optimalTargetValue + currentCumulativeFee.get() + costPerInput)).abs() < delta.get() }
                 .onEach { append(atomicReference = currentCumulativeSum, with = it.amount) }
                 .onEach { append(atomicReference = currentCumulativeFee, with = costPerInput) }
-                .onEach { delta.getAndSet((currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs()) }
                 .toList()
     }
 
