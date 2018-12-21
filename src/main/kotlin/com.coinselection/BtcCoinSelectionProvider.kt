@@ -13,7 +13,7 @@ class BtcCoinSelectionProvider : CoinSelectionProvider {
         val cumulativeSum = selectedUtxoListSumAndFee.second
         val cumulativeFee = selectedUtxoListSumAndFee.third
         val improvedUtxoList = if (selectedUtxoList != null) {
-            improve(utxoList.subtract(selectedUtxoList).toList(), cumulativeSum, cumulativeFee, targetValue, feeRatePerByte, maxNumberOfInputs,
+            improve(utxoList.subtract(selectedUtxoList).toList(), cumulativeSum, cumulativeFee, targetValue, feeRatePerByte, maxNumberOfInputs - selectedUtxoList.size,
                     inputSize)
         } else {
             listOf()
@@ -44,6 +44,7 @@ class BtcCoinSelectionProvider : CoinSelectionProvider {
                     .asSequence()
                     .sortedByDescending { it.amount }
                     .takeWhile { cumulativeSum.get() < targetValue + cumulativeFee.get() }
+                    .take(maxNumberOfInputs)
                     .onEach { append(atomicReference = cumulativeSum, with = it.amount) }
                     .onEach { append(atomicReference = cumulativeFee, with = costPerInput) }
                     .toList()
@@ -60,18 +61,17 @@ class BtcCoinSelectionProvider : CoinSelectionProvider {
         val costPerInput = inputSize.toBigDecimal() * feeRatePerByte
         val maxTargetValue = BigDecimal(3) * targetValue
         val optimalTargetValue = BigDecimal(2) * targetValue
-        val delta = AtomicReference((currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs())
-        val improvedUtxoList = remainingUtxoList
+        val delta = AtomicReference(BigDecimal.valueOf(Long.MAX_VALUE))
+        return remainingUtxoList
                 .shuffled()
                 .asSequence()
-                .takeWhile { currentCumulativeSum.get() < maxTargetValue + currentCumulativeFee.get() }
                 .take(maxNumOfInputs)
+                .takeWhile { currentCumulativeSum.get() < maxTargetValue + currentCumulativeFee.get() }
+                .takeWhile { (currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs() <= delta.get() }
                 .onEach { append(atomicReference = currentCumulativeSum, with = it.amount) }
                 .onEach { append(atomicReference = currentCumulativeFee, with = costPerInput) }
-                .takeWhile { (currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs() < delta.get() }
                 .onEach { delta.getAndSet((currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs()) }
                 .toList()
-        return improvedUtxoList
     }
 
     private fun append(atomicReference: AtomicReference<BigDecimal>, with: BigDecimal?): BigDecimal {

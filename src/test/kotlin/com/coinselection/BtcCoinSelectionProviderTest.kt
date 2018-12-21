@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.util.*
 
-private const val KB = 1000L
+private val KB = 1000.toBigDecimal()
 
 class BtcCoinSelectionProviderTest {
 
@@ -16,7 +16,7 @@ class BtcCoinSelectionProviderTest {
 //  3. complex scenario: how does the UTXO pool behave over time and what is the average cost per transaction?
 
     private val coinSelectionProvider: CoinSelectionProvider = BtcCoinSelectionProvider()
-    private val smartFee = BigDecimal(0.00000005)
+    private val smartFeePerByte = BigDecimal.ONE.movePointLeft(8)
     private val random = Random()
 
     @RepeatedTest(100)
@@ -25,31 +25,13 @@ class BtcCoinSelectionProviderTest {
         val rangeMin = 0
         val rangeMax = 1
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
-        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee)
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte)
         val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
         val count = coinSelectionResult.selectedUtxos?.size
-        val feeSimple = calculateTransactionFee(count!!, 2, smartFee)
-        val feeCalculated = coinSelectionResult.totalFee.movePointLeft(8)
+        val feeSimple = calculateTransactionFee(count!!, 2, smartFeePerByte)
+        val feeCalculated = coinSelectionResult.totalFee
         Assertions.assertTrue(sum!! > targetValue + feeCalculated)
-        Assertions.assertTrue(feeSimple == feeCalculated.toLong())
-    }
-
-    @Test
-    fun `should fallback to largest first`() {
-        val targetValue = BigDecimal(5)
-        val rangeMin = 0
-        val rangeMax = 1
-        val maxNumOfInputs = 3
-        val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
-        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee, maxNumberOfInputs = maxNumOfInputs)
-        val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
-        val count = coinSelectionResult.selectedUtxos?.size
-        val feeSimple = calculateTransactionFee(count!!, 2, smartFee)
-        val feeCalculated = coinSelectionResult.totalFee.movePointLeft(8)
-
-        Assertions.assertTrue(sum!! > targetValue + feeCalculated)
-        Assertions.assertTrue(feeSimple == feeCalculated.toLong())
-        Assertions.assertTrue(coinSelectionResult.selectedUtxos!!.contains(utxoList.asSequence().sortedByDescending { it.amount }.first()))
+        Assertions.assertTrue(feeSimple == feeCalculated)
     }
 
     @Test
@@ -57,16 +39,16 @@ class BtcCoinSelectionProviderTest {
         val targetValue = BigDecimal(3)
         val rangeMin = 1.1
         val rangeMax = 1.2
-        val maxNumOfInputs = 3
+        val maxNumOfInputs = 6
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
-        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee, maxNumberOfInputs = maxNumOfInputs)
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte, maxNumberOfInputs = maxNumOfInputs)
         val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
         val count = coinSelectionResult.selectedUtxos?.size
-        val feeSimple = calculateTransactionFee(count!!, 2, smartFee)
-        val feeCalculated = coinSelectionResult.totalFee.movePointLeft(8)
+        val feeSimple = calculateTransactionFee(count!!, 2, smartFeePerByte)
+        val feeCalculated = coinSelectionResult.totalFee
         Assertions.assertTrue(sum!! > targetValue + feeCalculated)
-        Assertions.assertTrue(feeSimple == feeCalculated.toLong())
-        Assertions.assertSame(maxNumOfInputs * 2 - 1, coinSelectionResult.selectedUtxos!!.size)
+        Assertions.assertTrue(feeSimple == feeCalculated)
+        Assertions.assertSame(maxNumOfInputs, coinSelectionResult.selectedUtxos!!.size)
     }
 
     @Test
@@ -75,7 +57,7 @@ class BtcCoinSelectionProviderTest {
         val rangeMin = 1.1
         val rangeMax = 1.2
         val utxoList = (1..50).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
-        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFee)
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte)
         Assertions.assertNull(coinSelectionResult.selectedUtxos)
     }
 
@@ -87,10 +69,9 @@ class BtcCoinSelectionProviderTest {
         return this.fold(BigDecimal.ZERO) { acc, e -> acc + transform.invoke(e) }
     }
 
-    private fun calculateTransactionFee(inputsCount: Int, outputsCount: Int, smartFeePerKB: BigDecimal): Long {
+    private fun calculateTransactionFee(inputsCount: Int, outputsCount: Int, smartFeePerByte: BigDecimal): BigDecimal {
         val size = inputsCount * 91 + outputsCount * 32 + 11
-        val smartFeePerByte = smartFeePerKB.div(BigDecimal(KB))
-        return smartFeePerByte.movePointLeft(8).toLong() * size
+        return (smartFeePerByte * size.toBigDecimal())
     }
 
 }
