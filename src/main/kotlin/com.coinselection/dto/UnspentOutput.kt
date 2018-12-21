@@ -1,4 +1,4 @@
-package com.coinselection
+package com.coinselection.dto
 
 import java.math.BigDecimal
 
