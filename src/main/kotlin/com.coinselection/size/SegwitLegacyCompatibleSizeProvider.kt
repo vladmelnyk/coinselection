@@ -1,9 +1,9 @@
 package com.coinselection.size
 
-import com.coinselection.model.TransactionComponentsSize
+import com.coinselection.model.TransactionSize
 
 object SegwitLegacyCompatibleSizeProvider : TransactionSizeProvider {
-    override fun provide(): TransactionComponentsSize {
-        return TransactionComponentsSize(input = 91, output = 32, header = 11)
+    override fun provide(): TransactionSize {
+        return TransactionSize(input = 91, output = 32, header = 11)
     }
 }

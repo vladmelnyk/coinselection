@@ -1,8 +1,8 @@
 package com.coinselection.size
 
-import com.coinselection.model.TransactionComponentsSize
+import com.coinselection.model.TransactionSize
 
 interface TransactionSizeProvider {
-    fun provide(): TransactionComponentsSize
+    fun provide(): TransactionSize
 }
 

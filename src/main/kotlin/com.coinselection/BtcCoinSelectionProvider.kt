@@ -2,31 +2,31 @@ package com.coinselection
 
 import com.coinselection.dto.CoinSelectionResult
 import com.coinselection.dto.UnspentOutput
-import com.coinselection.model.TransactionComponentsSize
+import com.coinselection.model.TransactionSize
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicReference
 
 class BtcCoinSelectionProvider : CoinSelectionProvider {
 
-    override fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, transactionComponentsSize: TransactionComponentsSize): CoinSelectionResult {
-        val selectedUtxoListSumAndFee = select(utxoList, targetValue, feeRatePerByte, maxNumberOfInputs, numberOfDestinationAddress, transactionComponentsSize)
+    override fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, transactionSize: TransactionSize): CoinSelectionResult {
+        val selectedUtxoListSumAndFee = select(utxoList, targetValue, feeRatePerByte, maxNumberOfInputs, numberOfDestinationAddress, transactionSize)
         val selectedUtxoList = selectedUtxoListSumAndFee.first
         val cumulativeSum = selectedUtxoListSumAndFee.second
         val cumulativeFee = selectedUtxoListSumAndFee.third
         val improvedUtxoList = if (selectedUtxoList != null) {
             improve(utxoList.subtract(selectedUtxoList).toList(), cumulativeSum, cumulativeFee, targetValue, feeRatePerByte, maxNumberOfInputs - selectedUtxoList.size,
-                    transactionComponentsSize.input)
+                    transactionSize.input)
         } else {
             listOf()
         }
         return CoinSelectionResult(selectedUtxos = selectedUtxoList?.union(improvedUtxoList)?.toList(), totalFee = cumulativeFee.get())
     }
 
-    private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, transactionComponentsSize: TransactionComponentsSize): Triple<List<UnspentOutput>?, AtomicReference<BigDecimal>, AtomicReference<BigDecimal>> {
+    private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, transactionSize: TransactionSize): Triple<List<UnspentOutput>?, AtomicReference<BigDecimal>, AtomicReference<BigDecimal>> {
         val cumulativeSum = AtomicReference<BigDecimal>(BigDecimal.ZERO)
-        val costPerInput = transactionComponentsSize.input.toBigDecimal() * feeRatePerByte
-        val costPerOutput = transactionComponentsSize.output.toBigDecimal() * feeRatePerByte
-        val basicFee = transactionComponentsSize.header.toBigDecimal() * feeRatePerByte + BigDecimal(1 + numberOfDestinationAddress) * costPerOutput
+        val costPerInput = transactionSize.input.toBigDecimal() * feeRatePerByte
+        val costPerOutput = transactionSize.output.toBigDecimal() * feeRatePerByte
+        val basicFee = transactionSize.header.toBigDecimal() * feeRatePerByte + BigDecimal(1 + numberOfDestinationAddress) * costPerOutput
         val cumulativeFee = AtomicReference<BigDecimal>(basicFee)
 
         var selectedUtxoList = utxoList
