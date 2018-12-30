@@ -40,7 +40,7 @@ class BtcCoinSelectionProviderTest {
         val targetValue = BigDecimal(3)
         val rangeMin = 1.1
         val rangeMax = 1.2
-        val maxNumOfInputs = 6
+        val maxNumOfInputs = 5
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
         val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte, maxNumberOfInputs = maxNumOfInputs)
         val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
