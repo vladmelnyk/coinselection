@@ -28,6 +28,12 @@ data class CumulativeHolder(
         accumulatedFee.set(BigDecimal.ZERO)
     }
 
+    companion object {
+        fun defaultInit(): CumulativeHolder {
+            return CumulativeHolder(accumulatedSum = AtomicReference(BigDecimal.ZERO), accumulatedFee = AtomicReference(BigDecimal.ZERO))
+        }
+    }
+
     private fun append(atomicReference: AtomicReference<BigDecimal>, with: BigDecimal): BigDecimal {
         return atomicReference.accumulateAndGet(with) { t, u -> t + u }
     }

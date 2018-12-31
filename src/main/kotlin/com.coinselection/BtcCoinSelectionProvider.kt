@@ -6,7 +6,6 @@ import com.coinselection.model.CumulativeHolder
 import com.coinselection.model.TransactionSize
 import com.coinselection.size.SegwitLegacyCompatibleSizeProvider
 import java.math.BigDecimal
-import java.math.BigDecimal.ZERO
 import java.util.concurrent.atomic.AtomicReference
 
 const val MAX_INPUT = 60
@@ -17,7 +16,7 @@ class BtcCoinSelectionProvider(
 ) {
 
     fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, numberOfOutputs: Int = 1): CoinSelectionResult? {
-        val cumulativeHolder = CumulativeHolder(accumulatedSum = AtomicReference(ZERO), accumulatedFee = AtomicReference(ZERO))
+        val cumulativeHolder = CumulativeHolder.defaultInit()
         val costCalculator = CostCalculator(transactionSize = transactionSize, feePerByte = feeRatePerByte, numberOfOutputs = numberOfOutputs)
         val selectedUtxoList = select(utxoList, targetValue, costCalculator, cumulativeHolder)
                 ?: return null
@@ -26,8 +25,8 @@ class BtcCoinSelectionProvider(
     }
 
     private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput>? {
-        return selectUntilSumIsLessThanTarget(utxoList = utxoList.shuffled(), cumulativeHolder = cumulativeHolder, targetValue = targetValue, costCalculator = costCalculator)
-                ?: fallbackLargestFirstSelection(utxoList = utxoList, cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
+        return selectUntilSumIsLessThanTarget(utxoListRearanged = utxoList.shuffled(), cumulativeHolder = cumulativeHolder, targetValue = targetValue, costCalculator = costCalculator)
+                ?: fallbackLargestFirstSelection(utxoListRearanged = utxoList.sortedByDescending { it.amount }, cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
     }
 
     private fun improve(remainingUtxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput> {
@@ -49,9 +48,9 @@ class BtcCoinSelectionProvider(
         return cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()
     }
 
-    private fun selectUntilSumIsLessThanTarget(utxoList: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, targetValue: BigDecimal, costCalculator: CostCalculator): List<UnspentOutput>? {
+    private fun selectUntilSumIsLessThanTarget(utxoListRearanged: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, targetValue: BigDecimal, costCalculator: CostCalculator): List<UnspentOutput>? {
         cumulativeHolder.appendFee(costCalculator.getBaseFee())
-        val selectedUtxoList = utxoList
+        val selectedUtxoList = utxoListRearanged
                 .asSequence()
                 .takeWhile { sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue) }
                 .take(maxNumberOfInputs)
@@ -63,10 +62,10 @@ class BtcCoinSelectionProvider(
         return selectedUtxoList
     }
 
-    private fun fallbackLargestFirstSelection(utxoList: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, costCalculator: CostCalculator, targetValue: BigDecimal): List<UnspentOutput>? {
+    private fun fallbackLargestFirstSelection(utxoListRearanged: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, costCalculator: CostCalculator, targetValue: BigDecimal): List<UnspentOutput>? {
         cumulativeHolder.reset()
         cumulativeHolder.appendFee(costCalculator.getBaseFee())
-        val selectedUtxoList = selectUntilSumIsLessThanTarget(utxoList.sortedByDescending { it.amount },
+        val selectedUtxoList = selectUntilSumIsLessThanTarget(utxoListRearanged = utxoListRearanged,
                 cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
 //            Return null utxo list if total amount is still not enough
         if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
