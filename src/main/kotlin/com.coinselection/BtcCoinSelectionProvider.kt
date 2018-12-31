@@ -27,26 +27,16 @@ class BtcCoinSelectionProvider(
 
     private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput>? {
         cumulativeHolder.appendFee(costCalculator.getBaseFee())
-        var selectedUtxoList = utxoList
-                .shuffled()
-                .asSequence()
-                .takeWhile { cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee() }
-                .take(maxNumberOfInputs)
-                .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
-                .toList()
-        if (cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()) {
+        var selectedUtxoList = selectUntilSumIsLessThanTarget(utxoList = utxoList.shuffled(),
+                cumulativeHolder = cumulativeHolder, targetValue = targetValue, costCalculator = costCalculator)
+        if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
 //            fallback to largest-first algorithm
             cumulativeHolder.reset()
             cumulativeHolder.appendFee(costCalculator.getBaseFee())
-            selectedUtxoList = utxoList
-                    .sortedByDescending { it.amount }
-                    .asSequence()
-                    .takeWhile { cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee() }
-                    .take(maxNumberOfInputs)
-                    .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
-                    .toList()
+            selectedUtxoList = selectUntilSumIsLessThanTarget(utxoList.sortedByDescending { it.amount },
+                    cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
 //            Return null utxo list if total amount is still not enough
-            if (cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()) {
+            if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
                 return null
             }
         }
@@ -62,9 +52,22 @@ class BtcCoinSelectionProvider(
                 .shuffled()
                 .asSequence()
                 .take(maxNumberOfInputs)
-                .takeWhile { cumulativeHolder.getSum() < maxTargetValue + cumulativeHolder.getFee() }
+                .takeWhile { sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = maxTargetValue) }
                 .onEach { delta.getAndSet((cumulativeHolder.getSum() - (optimalTargetValue + cumulativeHolder.getFee())).abs()) }
                 .takeWhile { (cumulativeHolder.getSum() + it.amount - (optimalTargetValue + cumulativeHolder.getFee() + costCalculator.getCostPerInput())).abs() < delta.get() }
+                .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
+                .toList()
+    }
+
+    private fun sumIsLessThanTarget(cumulativeHolder: CumulativeHolder, targetValue: BigDecimal): Boolean {
+        return cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()
+    }
+
+    private fun selectUntilSumIsLessThanTarget(utxoList: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, targetValue: BigDecimal, costCalculator: CostCalculator): List<UnspentOutput> {
+        return utxoList
+                .asSequence()
+                .takeWhile { sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue) }
+                .take(maxNumberOfInputs)
                 .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
                 .toList()
     }
