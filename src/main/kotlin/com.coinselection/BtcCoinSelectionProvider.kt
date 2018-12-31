@@ -26,22 +26,8 @@ class BtcCoinSelectionProvider(
     }
 
     private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput>? {
-        cumulativeHolder.appendFee(costCalculator.getBaseFee())
-        var selectedUtxoList = selectUntilSumIsLessThanTarget(utxoList = utxoList.shuffled(),
-                cumulativeHolder = cumulativeHolder, targetValue = targetValue, costCalculator = costCalculator)
-        if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
-//            fallback to largest-first algorithm
-            cumulativeHolder.reset()
-            cumulativeHolder.appendFee(costCalculator.getBaseFee())
-            selectedUtxoList = selectUntilSumIsLessThanTarget(utxoList.sortedByDescending { it.amount },
-                    cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
-//            Return null utxo list if total amount is still not enough
-            if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
-                return null
-            }
-        }
-        return selectedUtxoList
-
+        return selectUntilSumIsLessThanTarget(utxoList = utxoList.shuffled(), cumulativeHolder = cumulativeHolder, targetValue = targetValue, costCalculator = costCalculator)
+                ?: fallbackLargestFirstSelection(utxoList = utxoList, cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
     }
 
     private fun improve(remainingUtxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput> {
@@ -63,13 +49,30 @@ class BtcCoinSelectionProvider(
         return cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()
     }
 
-    private fun selectUntilSumIsLessThanTarget(utxoList: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, targetValue: BigDecimal, costCalculator: CostCalculator): List<UnspentOutput> {
-        return utxoList
+    private fun selectUntilSumIsLessThanTarget(utxoList: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, targetValue: BigDecimal, costCalculator: CostCalculator): List<UnspentOutput>? {
+        cumulativeHolder.appendFee(costCalculator.getBaseFee())
+        val selectedUtxoList = utxoList
                 .asSequence()
                 .takeWhile { sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue) }
                 .take(maxNumberOfInputs)
                 .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
                 .toList()
+        if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
+            return null
+        }
+        return selectedUtxoList
+    }
+
+    private fun fallbackLargestFirstSelection(utxoList: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, costCalculator: CostCalculator, targetValue: BigDecimal): List<UnspentOutput>? {
+        cumulativeHolder.reset()
+        cumulativeHolder.appendFee(costCalculator.getBaseFee())
+        val selectedUtxoList = selectUntilSumIsLessThanTarget(utxoList.sortedByDescending { it.amount },
+                cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
+//            Return null utxo list if total amount is still not enough
+        if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
+            return null
+        }
+        return selectedUtxoList
     }
 
     private fun appendCumulativeHolder(cumulativeHolder: CumulativeHolder, costCalculator: CostCalculator, sum: BigDecimal) {
