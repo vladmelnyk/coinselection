@@ -2,81 +2,83 @@ package com.coinselection
 
 import com.coinselection.dto.CoinSelectionResult
 import com.coinselection.dto.UnspentOutput
+import com.coinselection.model.CumulativeHolder
 import com.coinselection.model.TransactionSize
+import com.coinselection.size.SegwitLegacyCompatibleSizeProvider
 import java.math.BigDecimal
+import java.math.BigDecimal.ZERO
 import java.util.concurrent.atomic.AtomicReference
 
-class BtcCoinSelectionProvider : CoinSelectionProvider {
+const val MAX_INPUT = 60
 
-    override fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, transactionSize: TransactionSize): CoinSelectionResult {
-        val selectedUtxoListSumAndFee = select(utxoList, targetValue, feeRatePerByte, maxNumberOfInputs, numberOfDestinationAddress, transactionSize)
-        val selectedUtxoList = selectedUtxoListSumAndFee.first
-        val cumulativeSum = selectedUtxoListSumAndFee.second
-        val cumulativeFee = selectedUtxoListSumAndFee.third
-        val improvedUtxoList = if (selectedUtxoList != null) {
-            improve(utxoList.subtract(selectedUtxoList).toList(), cumulativeSum, cumulativeFee, targetValue, feeRatePerByte, maxNumberOfInputs - selectedUtxoList.size,
-                    transactionSize.input)
-        } else {
-            listOf()
-        }
-        return CoinSelectionResult(selectedUtxos = selectedUtxoList?.union(improvedUtxoList)?.toList(), totalFee = cumulativeFee.get())
+class BtcCoinSelectionProvider(
+        private val maxNumberOfInputs: Int = MAX_INPUT,
+        private val transactionSize: TransactionSize = SegwitLegacyCompatibleSizeProvider.provide()
+) {
+
+    fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, numberOfOutputs: Int = 1): CoinSelectionResult? {
+        val cumulativeHolder = CumulativeHolder(accumulatedSum = AtomicReference(ZERO), accumulatedFee = AtomicReference(ZERO))
+        val costCalculator = CostCalculator(transactionSize = transactionSize, feePerByte = feeRatePerByte, numberOfOutputs = numberOfOutputs)
+        val selectedUtxoList = select(utxoList, targetValue, costCalculator, cumulativeHolder)
+                ?: return null
+        val improvedUtxoList = improve(getRemainingUtxoList(selectedUtxoList = selectedUtxoList, originalUtxoList = utxoList), targetValue = targetValue, costCalculator = costCalculator, cumulativeHolder = cumulativeHolder)
+        return CoinSelectionResult(selectedUtxos = mergeUtxoLists(selectedUtxoList = selectedUtxoList, improvedUtxoList = improvedUtxoList), totalFee = cumulativeHolder.accumulatedFee.get())
     }
 
-    private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumberOfInputs: Int, numberOfDestinationAddress: Int, transactionSize: TransactionSize): Triple<List<UnspentOutput>?, AtomicReference<BigDecimal>, AtomicReference<BigDecimal>> {
-        val cumulativeSum = AtomicReference<BigDecimal>(BigDecimal.ZERO)
-        val costPerInput = transactionSize.input.toBigDecimal() * feeRatePerByte
-        val costPerOutput = transactionSize.output.toBigDecimal() * feeRatePerByte
-        val basicFee = transactionSize.header.toBigDecimal() * feeRatePerByte + BigDecimal(1 + numberOfDestinationAddress) * costPerOutput
-        val cumulativeFee = AtomicReference<BigDecimal>(basicFee)
-
+    private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput>? {
+        cumulativeHolder.appendFee(costCalculator.getBaseFee())
         var selectedUtxoList = utxoList
                 .shuffled()
                 .asSequence()
-                .takeWhile { cumulativeSum.get() < targetValue + cumulativeFee.get() }
+                .takeWhile { cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee() }
                 .take(maxNumberOfInputs)
-                .onEach { append(atomicReference = cumulativeSum, with = it.amount) }
-                .onEach { append(atomicReference = cumulativeFee, with = costPerInput) }
+                .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
                 .toList()
-        if (cumulativeSum.get() < targetValue + cumulativeFee.get()) {
+        if (cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()) {
 //            fallback to largest-first algorithm
-            cumulativeSum.set(BigDecimal.ZERO)
-            cumulativeFee.set(basicFee)
+            cumulativeHolder.reset()
+            cumulativeHolder.appendFee(costCalculator.getBaseFee())
             selectedUtxoList = utxoList
-                    .asSequence()
                     .sortedByDescending { it.amount }
-                    .takeWhile { cumulativeSum.get() < targetValue + cumulativeFee.get() }
+                    .asSequence()
+                    .takeWhile { cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee() }
                     .take(maxNumberOfInputs)
-                    .onEach { append(atomicReference = cumulativeSum, with = it.amount) }
-                    .onEach { append(atomicReference = cumulativeFee, with = costPerInput) }
+                    .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
                     .toList()
 //            Return null utxo list if total amount is still not enough
-            if (cumulativeSum.get() < targetValue + cumulativeFee.get()) {
-                return Triple(null, cumulativeSum, cumulativeFee)
+            if (cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()) {
+                return null
             }
         }
-        return Triple(selectedUtxoList, cumulativeSum, cumulativeFee)
+        return selectedUtxoList
 
     }
 
-    private fun improve(remainingUtxoList: List<UnspentOutput>, currentCumulativeSum: AtomicReference<BigDecimal>, currentCumulativeFee: AtomicReference<BigDecimal>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, maxNumOfInputs: Int, inputSize: Int): List<UnspentOutput> {
-        val costPerInput = inputSize.toBigDecimal() * feeRatePerByte
+    private fun improve(remainingUtxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput> {
         val maxTargetValue = BigDecimal(3) * targetValue
         val optimalTargetValue = BigDecimal(2) * targetValue
         val delta = AtomicReference(BigDecimal.valueOf(Long.MAX_VALUE))
         return remainingUtxoList
                 .shuffled()
                 .asSequence()
-                .take(maxNumOfInputs)
-                .takeWhile { currentCumulativeSum.get() < maxTargetValue + currentCumulativeFee.get() }
-                .onEach { delta.getAndSet((currentCumulativeSum.get() - (optimalTargetValue + currentCumulativeFee.get())).abs()) }
-                .takeWhile { (currentCumulativeSum.get() + it.amount - (optimalTargetValue + currentCumulativeFee.get() + costPerInput)).abs() < delta.get() }
-                .onEach { append(atomicReference = currentCumulativeSum, with = it.amount) }
-                .onEach { append(atomicReference = currentCumulativeFee, with = costPerInput) }
+                .take(maxNumberOfInputs)
+                .takeWhile { cumulativeHolder.getSum() < maxTargetValue + cumulativeHolder.getFee() }
+                .onEach { delta.getAndSet((cumulativeHolder.accumulatedSum.get() - (optimalTargetValue + cumulativeHolder.getFee())).abs()) }
+                .takeWhile { (cumulativeHolder.getSum() + it.amount - (optimalTargetValue + cumulativeHolder.getFee() + costCalculator.getCostPerInput())).abs() < delta.get() }
+                .onEach { appendCumulativeHolder(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
                 .toList()
     }
 
-    private fun append(atomicReference: AtomicReference<BigDecimal>, with: BigDecimal?): BigDecimal {
-        return atomicReference.accumulateAndGet(with) { t, u -> t + u }
+    private fun appendCumulativeHolder(cumulativeHolder: CumulativeHolder, costCalculator: CostCalculator, sum: BigDecimal) {
+        cumulativeHolder.appendSum(sum)
+        cumulativeHolder.appendFee(costCalculator.getCostPerInput())
     }
 
+    private fun getRemainingUtxoList(selectedUtxoList: List<UnspentOutput>, originalUtxoList: List<UnspentOutput>): List<UnspentOutput> {
+        return originalUtxoList.subtract(selectedUtxoList).toList()
+    }
+
+    private fun mergeUtxoLists(selectedUtxoList: List<UnspentOutput>, improvedUtxoList: List<UnspentOutput>): List<UnspentOutput> {
+        return selectedUtxoList.union(improvedUtxoList).toList()
+    }
 }
