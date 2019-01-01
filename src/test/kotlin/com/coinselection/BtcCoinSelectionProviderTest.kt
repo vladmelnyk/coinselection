@@ -15,7 +15,7 @@ class BtcCoinSelectionProviderTest {
 //  2. fallback scenario ?
 //  3. complex scenario: how does the UTXO pool behave over time and what is the average cost per transaction?
 
-    private val coinSelectionProvider: CoinSelectionProvider = BtcCoinSelectionProvider()
+    private val coinSelectionProvider: BtcCoinSelectionProvider = BtcCoinSelectionProvider()
     private val smartFeePerByte = BigDecimal.ONE.movePointLeft(8)
     private val random = Random()
 
@@ -25,7 +25,7 @@ class BtcCoinSelectionProviderTest {
         val rangeMin = 0
         val rangeMax = 1
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
-        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte)
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte)!!
         val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
         val count = coinSelectionResult.selectedUtxos?.size
         val feeSimple = calculateTransactionFee(count!!, 2, smartFeePerByte)
@@ -40,9 +40,9 @@ class BtcCoinSelectionProviderTest {
         val targetValue = BigDecimal(3)
         val rangeMin = 1.1
         val rangeMax = 1.2
-        val maxNumOfInputs = 6
+        val maxNumOfInputs = 5
         val utxoList = (1..1000).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
-        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte, maxNumberOfInputs = maxNumOfInputs)
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte)!!
         val sum = coinSelectionResult.selectedUtxos?.sumByBigDecimal { it.amount }
         val count = coinSelectionResult.selectedUtxos?.size
         val feeSimple = calculateTransactionFee(count!!, 2, smartFeePerByte)
@@ -59,7 +59,7 @@ class BtcCoinSelectionProviderTest {
         val rangeMax = 1.2
         val utxoList = (1..50).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
         val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte)
-        Assertions.assertNull(coinSelectionResult.selectedUtxos)
+        Assertions.assertNull(coinSelectionResult)
     }
 
     private fun createUnspentOutput(value: Double): UnspentOutput {

@@ -22,7 +22,7 @@ In `build.gradle` add:
     }
  Then, in your dependencies add:
  
-    implementation 'com.github.vladmelnyk:coinselection:0.0.1' 
+    implementation 'com.github.vladmelnyk:coinselection:0.0.3' 
     
 For the latest version please refer to https://jitpack.io/#vladmelnyk/coinselection
 
