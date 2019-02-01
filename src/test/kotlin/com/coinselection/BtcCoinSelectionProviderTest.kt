@@ -62,6 +62,18 @@ class BtcCoinSelectionProviderTest {
         Assertions.assertNull(coinSelectionResult)
     }
 
+    @Test
+    fun `should include all compulsory utxos`() {
+        val targetValue = BigDecimal(5)
+        val rangeMin = 1.1
+        val rangeMax = 1.2
+        val utxoList = (1..50).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
+        val compulsoryUtxoList = (1..20).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte, compulsoryUtxoList = compulsoryUtxoList)
+        Assertions.assertNotNull(coinSelectionResult!!.selectedUtxos)
+        Assertions.assertTrue(coinSelectionResult.selectedUtxos!!.containsAll(compulsoryUtxoList))
+    }
+
     private fun createUnspentOutput(value: Double): UnspentOutput {
         return UnspentOutput(amount = BigDecimal(value))
     }
