@@ -15,18 +15,41 @@ class BtcCoinSelectionProvider(
         private val transactionSize: TransactionSize = SegwitLegacyCompatibleSizeProvider.provide()
 ) {
 
-    fun provide(utxoList: List<UnspentOutput>, targetValue: BigDecimal, feeRatePerByte: BigDecimal, numberOfOutputs: Int = 1): CoinSelectionResult? {
-        val cumulativeHolder = CumulativeHolder.defaultInit()
-        val costCalculator = CostCalculator(transactionSize = transactionSize, feePerByte = feeRatePerByte, numberOfOutputs = numberOfOutputs)
-        val selectedUtxoList = select(utxoList, targetValue, costCalculator, cumulativeHolder)
-                ?: return null
-        val improvedUtxoList = improve(getRemainingUtxoList(selectedUtxoList = selectedUtxoList, originalUtxoList = utxoList), targetValue = targetValue, costCalculator = costCalculator, cumulativeHolder = cumulativeHolder)
-        return CoinSelectionResult(selectedUtxos = mergeUtxoLists(selectedUtxoList = selectedUtxoList, improvedUtxoList = improvedUtxoList), totalFee = cumulativeHolder.getFee())
-    }
+    private class UtxoSumCalculationData(
+            val utxoList: List<UnspentOutput>,
+            val cumulativeHolder: CumulativeHolder
+    )
 
-    private fun select(utxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput>? {
-        return selectUntilSumIsLessThanTarget(utxoListRearanged = utxoList.shuffled(), cumulativeHolder = cumulativeHolder, targetValue = targetValue, costCalculator = costCalculator)
-                ?: fallbackLargestFirstSelection(utxoListRearanged = utxoList.sortedByDescending { it.amount }, cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
+
+    fun provide(utxoList: List<UnspentOutput>,
+                targetValue: BigDecimal,
+                feeRatePerByte: BigDecimal,
+                numberOfOutputs: Int = 1,
+                compulsoryUtxoList: List<UnspentOutput> = listOf()
+    ): CoinSelectionResult? {
+
+        val costCalculator = CostCalculator(transactionSize, feeRatePerByte, numberOfOutputs)
+
+        val dataPair = selectUntilSumIsLessThanTarget(
+                utxoList.shuffled(), targetValue, costCalculator, compulsoryUtxoList)
+                ?: fallbackLargestFirstSelection(
+                        utxoListRearanged = utxoList.sortedByDescending { it.amount },
+                        costCalculator = costCalculator,
+                        targetValue = targetValue,
+                        compulsoryUtxoList = compulsoryUtxoList)
+                ?: return null
+
+        val selectedUtxoList = dataPair.utxoList
+        val cumulativeHolder = dataPair.cumulativeHolder
+
+        val remainingUtxoList = utxoList.subtract(selectedUtxoList).toList()
+        val improvedUtxoList = improve(remainingUtxoList, targetValue, costCalculator, cumulativeHolder)
+
+        val utxResult = selectedUtxoList.union(improvedUtxoList).toList()
+
+        return CoinSelectionResult(
+                selectedUtxos = utxResult,
+                totalFee = cumulativeHolder.getFee())
     }
 
     private fun improve(remainingUtxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput> {
@@ -37,10 +60,10 @@ class BtcCoinSelectionProvider(
                 .shuffled()
                 .asSequence()
                 .take(maxNumberOfInputs)
-                .takeWhile { sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = maxTargetValue) }
+                .takeWhile { sumIsLessThanTarget(cumulativeHolder, targetValue = maxTargetValue) }
                 .onEach { delta.getAndSet((cumulativeHolder.getSum() - (optimalTargetValue + cumulativeHolder.getFee())).abs()) }
                 .takeWhile { (cumulativeHolder.getSum() + it.amount - (optimalTargetValue + cumulativeHolder.getFee() + costCalculator.getCostPerInput())).abs() < delta.get() }
-                .onEach { appendSumAndFee(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
+                .onEach { appendSumAndFee(cumulativeHolder, costCalculator, sum = it.amount) }
                 .toList()
     }
 
@@ -48,30 +71,36 @@ class BtcCoinSelectionProvider(
         return cumulativeHolder.getSum() < targetValue + cumulativeHolder.getFee()
     }
 
-    private fun selectUntilSumIsLessThanTarget(utxoListRearanged: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, targetValue: BigDecimal, costCalculator: CostCalculator): List<UnspentOutput>? {
+    private fun selectUntilSumIsLessThanTarget(utxoListRearanged: List<UnspentOutput>,
+                                               targetValue: BigDecimal,
+                                               costCalculator: CostCalculator,
+                                               compulsoryUtxoList: List<UnspentOutput>): UtxoSumCalculationData? {
+        val cumulativeHolder = CumulativeHolder.defaultInit()
         cumulativeHolder.appendFee(costCalculator.getBaseFee())
         val selectedUtxoList = utxoListRearanged
                 .asSequence()
-                .takeWhile { sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue) }
+                .takeWhile { sumIsLessThanTarget(cumulativeHolder, targetValue) }
                 .take(maxNumberOfInputs)
-                .onEach { appendSumAndFee(cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, sum = it.amount) }
+                .onEach { appendSumAndFee(cumulativeHolder, costCalculator, sum = it.amount) }
                 .toList()
-        if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
+        if (sumIsLessThanTarget(cumulativeHolder, targetValue)) {
             return null
         }
-        return selectedUtxoList
+        return UtxoSumCalculationData(compulsoryUtxoList + selectedUtxoList, cumulativeHolder)
     }
 
-    private fun fallbackLargestFirstSelection(utxoListRearanged: List<UnspentOutput>, cumulativeHolder: CumulativeHolder, costCalculator: CostCalculator, targetValue: BigDecimal): List<UnspentOutput>? {
-        cumulativeHolder.reset()
-        cumulativeHolder.appendFee(costCalculator.getBaseFee())
-        val selectedUtxoList = selectUntilSumIsLessThanTarget(utxoListRearanged = utxoListRearanged,
-                cumulativeHolder = cumulativeHolder, costCalculator = costCalculator, targetValue = targetValue)
-//            Return null utxo list if total amount is still not enough
-        if (sumIsLessThanTarget(cumulativeHolder = cumulativeHolder, targetValue = targetValue)) {
-            return null
+    private fun fallbackLargestFirstSelection(utxoListRearanged: List<UnspentOutput>,
+                                              costCalculator: CostCalculator,
+                                              targetValue: BigDecimal,
+                                              compulsoryUtxoList: List<UnspentOutput>): UtxoSumCalculationData? {
+        val dataPair = selectUntilSumIsLessThanTarget(utxoListRearanged, targetValue, costCalculator, compulsoryUtxoList)
+        return if (dataPair == null || sumIsLessThanTarget(dataPair.cumulativeHolder, targetValue)) {
+            null
+        } else {
+            val cumulativeHolder = dataPair.cumulativeHolder
+            cumulativeHolder.appendFee(costCalculator.getBaseFee())
+            UtxoSumCalculationData(compulsoryUtxoList + dataPair.utxoList, cumulativeHolder)
         }
-        return selectedUtxoList
     }
 
     private fun appendSumAndFee(cumulativeHolder: CumulativeHolder, costCalculator: CostCalculator, sum: BigDecimal) {
@@ -79,11 +108,4 @@ class BtcCoinSelectionProvider(
         cumulativeHolder.appendFee(costCalculator.getCostPerInput())
     }
 
-    private fun getRemainingUtxoList(selectedUtxoList: List<UnspentOutput>, originalUtxoList: List<UnspentOutput>): List<UnspentOutput> {
-        return originalUtxoList.subtract(selectedUtxoList).toList()
-    }
-
-    private fun mergeUtxoLists(selectedUtxoList: List<UnspentOutput>, improvedUtxoList: List<UnspentOutput>): List<UnspentOutput> {
-        return selectedUtxoList.union(improvedUtxoList).toList()
-    }
 }
