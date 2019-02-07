@@ -72,6 +72,10 @@ class BtcCoinSelectionProviderTest {
         val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByte, compulsoryUtxoList = compulsoryUtxoList)
         Assertions.assertNotNull(coinSelectionResult!!.selectedUtxos)
         Assertions.assertTrue(coinSelectionResult.selectedUtxos!!.containsAll(compulsoryUtxoList))
+        val totalFeeExpected = calculateTransactionFee(coinSelectionResult.selectedUtxos!!.size, 2, smartFeePerByte)
+        val totalFee = coinSelectionResult.totalFee
+        Assertions.assertEquals(totalFeeExpected, totalFee)
+
     }
 
     private fun createUnspentOutput(value: Double): UnspentOutput {
