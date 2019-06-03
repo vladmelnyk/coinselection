@@ -20,12 +20,11 @@ class BtcCoinSelectionProvider(
             val cumulativeHolder: CumulativeHolder
     )
 
-
     fun provide(utxoList: List<UnspentOutput>,
                 targetValue: BigDecimal,
                 feeRatePerByte: BigDecimal,
                 numberOfOutputs: Int = 1,
-                compulsoryUtxoList: List<UnspentOutput> = listOf()
+                compulsoryUtxoList: List<UnspentOutput>? = null
     ): CoinSelectionResult? {
 
         val costCalculator = CostCalculator(transactionSize, feeRatePerByte, numberOfOutputs)
@@ -60,6 +59,7 @@ class BtcCoinSelectionProvider(
                 .shuffled()
                 .asSequence()
                 .take(maxNumberOfInputs)
+                .filter { it.amount >= costCalculator.getCostPerInput() }
                 .takeWhile { sumIsLessThanTarget(cumulativeHolder, targetValue = maxTargetValue) }
                 .onEach { delta.getAndSet((cumulativeHolder.getSum() - (optimalTargetValue + cumulativeHolder.getFee())).abs()) }
                 .takeWhile { (cumulativeHolder.getSum() + it.amount - (optimalTargetValue + cumulativeHolder.getFee() + costCalculator.getCostPerInput())).abs() < delta.get() }
@@ -74,16 +74,16 @@ class BtcCoinSelectionProvider(
     private fun selectUntilSumIsLessThanTarget(utxoListRearanged: List<UnspentOutput>,
                                                targetValue: BigDecimal,
                                                costCalculator: CostCalculator,
-                                               compulsoryUtxoList: List<UnspentOutput>): UtxoSumCalculationData? {
+                                               compulsoryUtxoList: List<UnspentOutput>?): UtxoSumCalculationData? {
         val cumulativeHolder = CumulativeHolder.defaultInit()
         cumulativeHolder.appendFee(costCalculator.getBaseFee())
-        val selectedCompulsoryUtxoList = compulsoryUtxoList
-                .asSequence()
-                .take(maxNumberOfInputs)
-                .onEach { appendSumAndFee(cumulativeHolder, costCalculator, sum = it.amount) }
-                .toList()
+        val selectedCompulsoryUtxoList = compulsoryUtxoList?.asSequence()
+                ?.take(maxNumberOfInputs)
+                ?.onEach { appendSumAndFee(cumulativeHolder, costCalculator, sum = it.amount) }
+                ?.toList() ?: listOf()
         val selectedUtxoList = utxoListRearanged
                 .asSequence()
+                .filter { it.amount >= costCalculator.getCostPerInput() }
                 .takeWhile { sumIsLessThanTarget(cumulativeHolder, targetValue) }
                 .take(maxNumberOfInputs)
                 .onEach { appendSumAndFee(cumulativeHolder, costCalculator, sum = it.amount) }
@@ -97,7 +97,7 @@ class BtcCoinSelectionProvider(
     private fun fallbackLargestFirstSelection(utxoListRearanged: List<UnspentOutput>,
                                               costCalculator: CostCalculator,
                                               targetValue: BigDecimal,
-                                              compulsoryUtxoList: List<UnspentOutput>): UtxoSumCalculationData? {
+                                              compulsoryUtxoList: List<UnspentOutput>?): UtxoSumCalculationData? {
         val dataPair = selectUntilSumIsLessThanTarget(utxoListRearanged, targetValue, costCalculator, compulsoryUtxoList)
         return if (dataPair == null || sumIsLessThanTarget(dataPair.cumulativeHolder, targetValue)) {
             null

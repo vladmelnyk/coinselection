@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.util.*
 
-private val KB = 1000.toBigDecimal()
+val BTC_DUST_AMOUNT: BigDecimal = 546.toBigDecimal().movePointLeft(8)
 
 class BtcCoinSelectionProviderTest {
 
@@ -17,6 +17,7 @@ class BtcCoinSelectionProviderTest {
 
     private val coinSelectionProvider: BtcCoinSelectionProvider = BtcCoinSelectionProvider()
     private val smartFeePerByte = BigDecimal.ONE.movePointLeft(8)
+    private val smartFeePerByteHigh = BigDecimal.TEN.movePointLeft(8)
     private val random = Random()
 
     @RepeatedTest(100)
@@ -75,7 +76,24 @@ class BtcCoinSelectionProviderTest {
         val totalFeeExpected = calculateTransactionFee(coinSelectionResult.selectedUtxos!!.size, 2, smartFeePerByte)
         val totalFee = coinSelectionResult.totalFee
         Assertions.assertEquals(totalFeeExpected, totalFee)
+    }
 
+    @Test
+    fun `should not include small utxos`() {
+        val targetValue = BigDecimal(5)
+        val rangeMin = 1.1
+        val rangeMax = 1.2
+        val rangeMinDust = BTC_DUST_AMOUNT.toDouble()
+        val rangeMaxDust = BTC_DUST_AMOUNT.toDouble()
+        val utxoList = (1..50).map { rangeMinDust + (rangeMaxDust - rangeMinDust) * random.nextDouble() }.map { createUnspentOutput(it) }
+        val compulsoryUtxoList = (1..20).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByteHigh, compulsoryUtxoList = compulsoryUtxoList)
+        Assertions.assertNotNull(coinSelectionResult!!.selectedUtxos)
+        Assertions.assertTrue(coinSelectionResult.selectedUtxos!!.containsAll(compulsoryUtxoList))
+        Assertions.assertFalse(coinSelectionResult.selectedUtxos!!.any { it in utxoList })
+        val totalFeeExpected = calculateTransactionFee(coinSelectionResult.selectedUtxos!!.size, 2, smartFeePerByteHigh)
+        val totalFee = coinSelectionResult.totalFee
+        Assertions.assertEquals(totalFeeExpected, totalFee)
     }
 
     private fun createUnspentOutput(value: Double): UnspentOutput {
