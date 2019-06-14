@@ -18,6 +18,7 @@ class BtcCoinSelectionProviderTest {
     private val coinSelectionProvider: BtcCoinSelectionProvider = BtcCoinSelectionProvider()
     private val smartFeePerByte = BigDecimal.ONE.movePointLeft(8)
     private val smartFeePerByteHigh = BigDecimal.TEN.movePointLeft(8)
+    private val smartFeePerByteExtraHigh = 195.toBigDecimal().movePointLeft(8)
     private val random = Random()
 
     @RepeatedTest(100)
@@ -96,6 +97,24 @@ class BtcCoinSelectionProviderTest {
         Assertions.assertEquals(totalFeeExpected, totalFee)
     }
 
+
+    @Test
+    fun `should account for op return output`() {
+        val targetValue = 0.00000546.toBigDecimal()
+        val utxoList = listOf(
+                0.00040717
+        ).map { createUnspentOutput(it) }
+
+        val coinSelectionResult = coinSelectionProvider.provide(utxoList, targetValue, smartFeePerByteExtraHigh, numberOfOutputs = 1, hasOpReturnOutput = true)
+
+        val sum = coinSelectionResult!!.selectedUtxos!!.sumByBigDecimal { it.amount }
+        Assertions.assertNotNull(coinSelectionResult.selectedUtxos)
+        Assertions.assertTrue(sum >= coinSelectionResult.totalFee)
+        val totalFeeExpected = calculateTransactionFee(coinSelectionResult.selectedUtxos!!.size, 2, smartFeePerByteExtraHigh, hasOpReturnOutput = true)
+        val totalFee = coinSelectionResult.totalFee
+        Assertions.assertEquals(totalFeeExpected, totalFee)
+    }
+
     private fun createUnspentOutput(value: Double): UnspentOutput {
         return UnspentOutput(amount = BigDecimal(value))
     }
@@ -104,9 +123,15 @@ class BtcCoinSelectionProviderTest {
         return this.fold(BigDecimal.ZERO) { acc, e -> acc + transform.invoke(e) }
     }
 
-    private fun calculateTransactionFee(inputsCount: Int, outputsCount: Int, smartFeePerByte: BigDecimal): BigDecimal {
+    private fun calculateTransactionFee(inputsCount: Int, outputsCount: Int, smartFeePerByte: BigDecimal,
+                                        hasOpReturnOutput: Boolean = false): BigDecimal {
         val size = inputsCount * 91 + outputsCount * 32 + 11
-        return (smartFeePerByte * size.toBigDecimal())
+        val opReturnOutputFee = if (hasOpReturnOutput) {
+            OP_RETURN_SIZE.toBigDecimal() * smartFeePerByte
+        } else {
+            BigDecimal.ZERO
+        }
+        return (smartFeePerByte * size.toBigDecimal() + opReturnOutputFee)
     }
 
 }
