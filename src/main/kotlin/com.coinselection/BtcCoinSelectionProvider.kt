@@ -24,10 +24,16 @@ class BtcCoinSelectionProvider(
                 targetValue: BigDecimal,
                 feeRatePerByte: BigDecimal,
                 numberOfOutputs: Int = 1,
-                compulsoryUtxoList: List<UnspentOutput>? = null
+                compulsoryUtxoList: List<UnspentOutput>? = null,
+                hasOpReturnOutput: Boolean = false
     ): CoinSelectionResult? {
 
-        val costCalculator = CostCalculator(transactionSize, feeRatePerByte, numberOfOutputs)
+        val costCalculator = CostCalculator(
+                transactionSize,
+                feeRatePerByte,
+                numberOfOutputs,
+                hasOpReturnOutput
+        )
 
         val dataPair = selectUntilSumIsLessThanTarget(
                 utxoList.shuffled(), targetValue, costCalculator, compulsoryUtxoList)
@@ -44,10 +50,10 @@ class BtcCoinSelectionProvider(
         val remainingUtxoList = utxoList.subtract(selectedUtxoList).toList()
         val improvedUtxoList = improve(remainingUtxoList, targetValue, costCalculator, cumulativeHolder)
 
-        val utxResult = selectedUtxoList.union(improvedUtxoList).toList()
+        val utxoResult = selectedUtxoList.union(improvedUtxoList).toList()
 
         return CoinSelectionResult(
-                selectedUtxos = utxResult,
+                selectedUtxos = utxoResult,
                 totalFee = cumulativeHolder.getFee())
     }
 
