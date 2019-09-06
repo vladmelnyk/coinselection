@@ -12,7 +12,7 @@ import com.coinselection.model.CumulativeHolder
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicReference
 
-internal object RandomImproveCoinSelectionProvider : CoinSelectionProvider by DefaultCoinSelectionProvider {
+internal object RandomImproveCoinSelectionProvider : CoinSelectionProvider {
 
     override fun provide(utxoList: List<UnspentOutput>,
                          targetValue: BigDecimal,
@@ -29,10 +29,9 @@ internal object RandomImproveCoinSelectionProvider : CoinSelectionProvider by De
                 hasOpReturnOutput
         )
 
-        val utxoListShuffled = utxoList.shuffled()
         val dataPair =
                 selectUntilSumIsLessThanTarget(
-                        utxoListShuffled,
+                        utxoList.shuffled(),
                         targetValue,
                         costCalculator,
                         compulsoryUtxoList
@@ -43,17 +42,14 @@ internal object RandomImproveCoinSelectionProvider : CoinSelectionProvider by De
                         compulsoryUtxoList = compulsoryUtxoList
                 ) ?: return null
 
-        val selectedUtxoList = dataPair.utxoList
-        val cumulativeHolder = dataPair.cumulativeHolder
+        val remainingUtxoList = utxoList.subtract(dataPair.utxoList).toList()
+        val improvedUtxoList = improve(remainingUtxoList, targetValue, costCalculator, dataPair.cumulativeHolder)
 
-        val remainingUtxoList = utxoList.subtract(selectedUtxoList).toList()
-        val improvedUtxoList = improve(remainingUtxoList, targetValue, costCalculator, cumulativeHolder)
-
-        val utxoResult = selectedUtxoList.union(improvedUtxoList).toList()
+        val utxoResult = dataPair.utxoList.union(improvedUtxoList).toList()
 
         return CoinSelectionResult(
                 selectedUtxos = utxoResult,
-                totalFee = cumulativeHolder.getFee())
+                totalFee = dataPair.cumulativeHolder.getFee())
     }
 
     private fun improve(remainingUtxoList: List<UnspentOutput>, targetValue: BigDecimal, costCalculator: CostCalculator, cumulativeHolder: CumulativeHolder): List<UnspentOutput> {
