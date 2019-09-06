@@ -5,7 +5,7 @@ import java.math.BigDecimal
 
 const val OP_RETURN_SIZE: Int = 40
 
-class CostCalculator(
+internal class CostCalculator(
         private val transactionSize: TransactionSize,
         private val feePerByte: BigDecimal,
         private val numberOfOutputs: Int,
