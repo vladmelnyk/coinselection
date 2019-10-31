@@ -43,7 +43,16 @@ internal class RandomImproveCoinSelectionProvider(maxNumberOfInputs: Int, transa
                 ) ?: return null
 
         val remainingUtxoList = utxoList.subtract(dataPair.utxoList).toList()
-        val improvedUtxoList = improve(remainingUtxoList, targetValue, costCalculator, dataPair.cumulativeHolder)
+
+        val remainingTotalAmount = remainingUtxoList.sumByBigDecimal { it.amount }
+
+        val canPerformImproveStep = remainingTotalAmount > targetValue
+        val improvedUtxoList =
+                if (canPerformImproveStep) {
+                    improve(remainingUtxoList, targetValue, costCalculator, dataPair.cumulativeHolder)
+                } else {
+                    listOf()
+                }
 
         val utxoResult = dataPair.utxoList.union(improvedUtxoList).toList()
 

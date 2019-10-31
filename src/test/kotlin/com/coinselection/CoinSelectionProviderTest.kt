@@ -116,6 +116,20 @@ class CoinSelectionProviderTest {
         Assertions.assertEquals(totalFeeExpected, totalFee)
     }
 
+    @Test
+    fun `should not improve for big target amount`() {
+        val targetValue = BigDecimal(27)
+        val rangeMin = 1.0
+        val rangeMax = 1.01
+        val utxoList = (1..50).map { rangeMin + (rangeMax - rangeMin) * random.nextDouble() }.map { createUnspentOutput(it) }
+        val coinSelectionResult = coinSelectionProviderRandomImprove.provide(utxoList, targetValue, smartFeePerByteHigh)
+        Assertions.assertNotNull(coinSelectionResult!!.selectedUtxos)
+        Assertions.assertTrue(coinSelectionResult.selectedUtxos!!.sumByBigDecimal { it.amount } < 28.toBigDecimal())
+        val totalFeeExpected = calculateTransactionFee(coinSelectionResult.selectedUtxos!!.size, 2, smartFeePerByteHigh)
+        val totalFee = coinSelectionResult.totalFee
+        Assertions.assertEquals(totalFeeExpected, totalFee)
+    }
+
 
     @Test
     fun `should account for op return output`() {
